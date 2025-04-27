@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from pydantic import BaseModel
 import joblib
 import numpy as np
@@ -13,11 +13,13 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 if not SUPABASE_URL or not SUPABASE_KEY:
-    raise Exception("Supabase URL and Key must be set in environment variables.")
+    raise Exception("SUPABASE_URL or SUPABASE_KEY environment variables are not set!")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Input model
+# Global model cache
+model = None
+
 class CropInput(BaseModel):
     latitude: float
     longitude: float
@@ -31,27 +33,33 @@ class CropInput(BaseModel):
     temperature: float
     humidity: float
 
-# Global variable to store the model in memory
-model = None
-
-# Function to load model (if not already loaded)
 def load_model():
     global model
-    if model is None:
-        model_file = supabase.storage.from_("models").download("crop_model.pkl")
-        model = joblib.load(io.BytesIO(model_file))
+    try:
+        print("Loading model from Supabase Storage...")
+        response = supabase.storage.from_("models").download("crop_model.pkl")
 
-# Healthcheck endpoint
-@app.get("/")
-async def root():
-    return {"message": "CropWise API is running!"}
+        if response is None:
+            raise Exception("Model download failed. Check if the file exists in Supabase Storage.")
 
-# Prediction endpoint
+        # Make sure to load the model from bytes
+        model_file = io.BytesIO(response)
+        model = joblib.load(model_file)
+        print("Model loaded successfully!")
+
+    except Exception as e:
+        print(f"Failed to load model: {e}")
+        raise
+
+@app.on_event("startup")
+async def startup_event():
+    load_model()
+
 @app.post("/predict")
 async def predict(input_data: CropInput):
     try:
-        # Load model once (if not already loaded)
-        load_model()
+        if model is None:
+            raise Exception("Model is not loaded yet.")
 
         input_array = np.array([[ 
             input_data.latitude,
@@ -67,7 +75,6 @@ async def predict(input_data: CropInput):
             input_data.humidity
         ]])
 
-        # Make prediction
         prediction = model.predict(input_array)
         probabilities = model.predict_proba(input_array)
 
@@ -76,5 +83,7 @@ async def predict(input_data: CropInput):
             "confidence": float(np.max(probabilities)),
             "all_probabilities": probabilities.tolist()
         }
+    
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Prediction failed: {str(e)}")
+        print(f"Error during prediction: {e}")
+        return {"error": str(e)}
