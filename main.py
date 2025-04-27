@@ -20,6 +20,7 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 # Global model cache
 model = None
 
+# Define the input model, now including zone
 class CropInput(BaseModel):
     latitude: float
     longitude: float
@@ -32,6 +33,7 @@ class CropInput(BaseModel):
     rainfall: float
     temperature: float
     humidity: float
+    zone: str  # New parameter for zone
 
 def load_model():
     global model
@@ -61,6 +63,7 @@ async def predict(input_data: CropInput):
         if model is None:
             raise Exception("Model is not loaded yet.")
 
+        # Including zone in the input array (you may need to adjust model input handling)
         input_array = np.array([[ 
             input_data.latitude,
             input_data.longitude,
@@ -72,9 +75,13 @@ async def predict(input_data: CropInput):
             input_data.clay_content,
             input_data.rainfall,
             input_data.temperature,
-            input_data.humidity
+            input_data.humidity,
+            # Assuming the model will require zone as a categorical feature,
+            # we'll convert the zone to an integer index, if necessary
+            input_data.zone
         ]])
 
+        # Check if the model can process the 'zone' feature
         prediction = model.predict(input_array)
         probabilities = model.predict_proba(input_array)
 
