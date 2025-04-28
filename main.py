@@ -36,7 +36,7 @@ training_features = None
 class CropInput(BaseModel):
     latitude: float
     longitude: float
-    pH: float
+    ph: float
     nitrogen: float
     phosphorus: float
     potassium: float
