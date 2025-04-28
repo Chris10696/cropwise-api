@@ -121,28 +121,91 @@ def preprocess_input(input_data: dict) -> pd.DataFrame:
         logger.error(f"Preprocessing failed: {e}")
         raise
 
+GROWING_TIPS = {
+    "Maize": {
+        "Soil": "Loamy well-drained soil, rich in organic matter.",
+        "Watering": "Requires consistent moisture, especially during flowering.",
+        "Harvest": "Harvest when husks turn brown and kernels are fully formed."
+    },
+    "Beans": {
+        "Soil": "Well-drained sandy loam soil with moderate fertility.",
+        "Watering": "Water moderately, avoid waterlogging.",
+        "Harvest": "Pick pods when they are firm and before seeds bulge."
+    },
+    "Rice": {
+        "Soil": "Clayey or silty soil that retains water well.",
+        "Watering": "Needs standing water during most of the growing season.",
+        "Harvest": "Harvest when grains turn golden yellow."
+    },
+    "Wheat": {
+        "Soil": "Well-drained loamy soil with neutral pH.",
+        "Watering": "Moderate watering, critical at tillering and flowering stages.",
+        "Harvest": "Harvest when plants are golden and grains are hard."
+    },
+    "Sorghum": {
+        "Soil": "Sandy loam soils with good drainage.",
+        "Watering": "Drought-tolerant, minimal watering needed.",
+        "Harvest": "Harvest when grains are hard and dry."
+    },
+    "Millet": {
+        "Soil": "Light sandy soils that drain quickly.",
+        "Watering": "Requires less water compared to other cereals.",
+        "Harvest": "Harvest when heads are dry and seeds harden."
+    },
+    "Tomato": {
+        "Soil": "Loamy soil rich in organic content, well-draining.",
+        "Watering": "Regular watering to maintain even soil moisture.",
+        "Harvest": "Harvest when fruits are fully red and firm."
+    },
+    "Potato": {
+        "Soil": "Loose, well-drained sandy loam rich in organic matter.",
+        "Watering": "Keep soil moist during tuber formation.",
+        "Harvest": "Harvest after foliage dies back."
+    },
+    "Cabbage": {
+        "Soil": "Fertile, well-drained soils with high moisture retention.",
+        "Watering": "Frequent watering for steady moisture supply.",
+        "Harvest": "Harvest when heads are firm and fully formed."
+    },
+    "Spinach": {
+        "Soil": "Rich, moist soil with good drainage.",
+        "Watering": "Keep soil consistently moist.",
+        "Harvest": "Harvest outer leaves when big enough to use."
+    },
+}
+
 @app.post("/predict")
 async def predict(input_data: CropInput):
     try:
         if model is None:
             raise HTTPException(status_code=503, detail="Model not loaded")
-            
-        # Preprocess input data
+        
         processed_data = preprocess_input(input_data)
-        
-        # Make prediction
         prediction = model.predict(processed_data)
-        probabilities = model.predict_proba(processed_data)
+        probabilities = model.predict_proba(processed_data)[0]
         
-        # Decode prediction
-        pred_label = label_encoder_y.inverse_transform(prediction)
+        top_indices = np.argsort(probabilities)[-3:][::-1]
+        top_crops = label_encoder_y.inverse_transform(top_indices)
+        
+        recommendations = []
+        for crop, prob in zip(top_crops, probabilities[top_indices]):
+            tips = GROWING_TIPS.get(crop, {
+                "Soil": "General fertile soil.",
+                "Watering": "Moderate watering.",
+                "Harvest": "Harvest when mature."
+            })
+            recommendations.append({
+                "name": crop,
+                "confidence": round(prob * 100, 2),
+                "growing_tips": tips
+            })
         
         return {
-            "recommended_crop": pred_label[0],
-            "confidence": float(np.max(probabilities)),
-            "all_probabilities": probabilities.tolist()
+            "recommendations": recommendations
         }
         
     except Exception as e:
         logger.error(f"Prediction error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
